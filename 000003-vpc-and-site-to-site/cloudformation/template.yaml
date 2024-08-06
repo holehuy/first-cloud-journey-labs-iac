@@ -1,0 +1,205 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+  
+Resources:
+  ASGVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.10.0.0/16
+      EnableDnsSupport: false
+      EnableDnsHostnames: false
+      Tags: 
+      - Key: Name
+        Value: ASG
+
+  ASGPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ASGVpc
+      AvailabilityZone: ap-southeast-1a
+      CidrBlock: 10.10.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: Public Subnet 1
+
+  ASGPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ASGVpc
+      AvailabilityZone: ap-southeast-1b
+      CidrBlock: 10.10.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: Public Subnet 2
+
+  ASGPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ASGVpc
+      AvailabilityZone: ap-southeast-1a
+      CidrBlock: 10.10.3.0/24
+      Tags:
+      - Key: Name
+        Value: Private Subnet 1
+
+  ASGPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ASGVpc
+      AvailabilityZone: ap-southeast-1b
+      CidrBlock: 10.10.4.0/24
+      Tags:
+      - Key: Name
+        Value: Private Subnet 2
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: Internet Gateway
+  
+  ASGVpcGatwayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref ASGVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  ASGVpcRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ASGVpc
+      Tags:
+      - Key: Name
+        Value: Route table-Public
+
+  ASGVpcRouteTableRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref ASGVpcRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  ASGVpcRouteTableSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ASGVpcRouteTable
+      SubnetId: !Ref ASGPublicSubnet1
+  
+  ASGVpcRouteTableSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ASGVpcRouteTable
+      SubnetId: !Ref ASGPublicSubnet2
+
+  ASGVpcPublicSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and Ping for servers in the public subnet.
+      VpcId: !Ref ASGVpc
+      GroupName: Public subnet - SG
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+  
+  ASGVpcPrivateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH and Ping for servers in the private subnet.
+      VpcId: !Ref ASGVpc
+      GroupName: Private subnet - SG
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref ASGVpcPublicSecurityGroup
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+  
+  EC2Public:
+    Type: AWS::EC2::Instance
+    Properties:
+      SubnetId: !Ref ASGPublicSubnet1
+      ImageId: ami-0adcfe5c27f7c9acf
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref ASGVpcPublicSecurityGroup
+      KeyName: aws-keypair
+      Tags: 
+      - Key: Name
+        Value: EC2 Public
+
+  EC2Private:
+    Type: AWS::EC2::Instance
+    Properties:
+      SubnetId: !Ref ASGPrivateSubnet2
+      ImageId: ami-0adcfe5c27f7c9acf
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref ASGVpcPrivateSecurityGroup
+      KeyName: aws-keypair
+      Tags: 
+      - Key: Name
+        Value: EC2 Private
+
+  EIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      SubnetId: !Ref ASGPublicSubnet2
+      ConnectivityType: public
+      AllocationId: !GetAtt EIP.AllocationId
+      Tags:
+        - Key: Name
+          Value: NAT Gateway
+      
+  ASGVpcPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+        VpcId: !Ref ASGVpc
+        Tags:
+        - Key: Name
+          Value: Route table-Private
+  
+  ASGVpcPrivateRouteTableSubnetAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ASGVpcPrivateRouteTable
+      SubnetId: !Ref ASGPrivateSubnet1
+  
+  ASGVpcPrivateRouteTableSubnetAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ASGVpcPrivateRouteTable
+      SubnetId: !Ref ASGPrivateSubnet2
+
+  ASGVpcPrivateRouteTableRoute:
+    Type: AWS::EC2::Route
+    Properties:
+        RouteTableId: !Ref ASGVpcPrivateRouteTable
+        DestinationCidrBlock: 0.0.0.0/0
+        NatGatewayId: !Ref NATGateway
+
+  
+
+        
